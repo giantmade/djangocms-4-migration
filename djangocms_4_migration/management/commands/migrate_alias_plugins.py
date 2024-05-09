@@ -2,8 +2,8 @@ import logging
 
 from django.core.management.base import BaseCommand
 from django.core.exceptions import ObjectDoesNotExist
-from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
+from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 
@@ -29,8 +29,6 @@ from djangocms_4_migration.models import PageData
 
 logger = logging.getLogger(__name__)
 
-User = get_user_model()
-
 src_alias_count = 0
 reference_alias_count = 0
 new_src_alias_plugins_count = 0
@@ -39,6 +37,11 @@ new_ref_alias_plugins_count = 0
 
 def _create_site_category(site, language):
     category_name = f"{site.name}-Migrated-{language}"
+    # Check to see if we have a category for this site already, and use it if we do. Little bit of
+    # a guard so that we can run migrate multiple times without creating duplicate categories.
+    category = Category.objects.filter(translations__name=category_name)
+    if category:
+        return category.get()
     category = Category.objects.language(language).create(
         name=category_name,
     )
@@ -208,7 +211,7 @@ def process_old_alias_sources(site, language, site_plugin_queryset):
         if is_versioning_enabled():
             from djangocms_versioning.models import Version
             # Create version
-            changed_by = User.objects.get(**{User.USERNAME_FIELD: old_plugin.placeholder.source.changed_by})
+            changed_by = User.objects.get(username=old_plugin.placeholder.source.changed_by)
             version = Version.objects.create(content=alias_content, created_by=changed_by)
             version.save()
             version.publish(changed_by)
@@ -254,7 +257,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         with transaction.atomic():
             # Alias source plugin list
-            cms3_alias_ref_ids = AliasPluginModel.objects.values('plugin_id').order_by('plugin_id').distinct('plugin_id')
+            cms3_alias_ref_ids = set(AliasPluginModel.objects.values('plugin_id').order_by('plugin_id').distinct())
             plugin_id_list = [cms3_plugin['plugin_id'] for cms3_plugin in cms3_alias_ref_ids if cms3_plugin['plugin_id']]
             alias_source_total = len(plugin_id_list)
             # Alias references list count
