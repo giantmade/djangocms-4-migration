@@ -17,6 +17,9 @@ from djangocms_versioning.models import Version
 logger = logging.getLogger(__name__)
 
 
+def _get_replacement_page(page):
+    return Page.objects.filter(node_id=page.node_id).exclude(id=page.id).get()
+
 def _fix_page_references(page):
     relations = [
         f
@@ -26,7 +29,7 @@ def _fix_page_references(page):
         and not f.concrete
     ]
 
-    replacement_page = Page.objects.filter(node_id=page.node_id).exclude(id=page.id).get()
+    replacement_page = _get_replacement_page(page)
     logger.info("Fixing reference from Page %s to %s", page.id, replacement_page.id)
 
     for rel in relations:
@@ -44,6 +47,18 @@ def _fix_page_references(page):
             model.objects.filter(**{rel.field.name: page}).update(
                 **{rel.field.name: replacement_page}
             )
+
+
+def _fix_pagefield_references(page):
+    replacement_page = _get_replacement_page(page)
+    logger.info("Fixing PageField references from Page %s to %s", page.id, replacement_page.id)
+    plugin_relation_models = [
+        r for r in page._meta._relation_tree if r.related_model == Page
+    ]
+
+    for rel in plugin_relation_models:
+        model = rel.model
+        model.objects.filter(**{rel.name: page}).update(**{rel.name:replacement_page})
 
 
 def _delete_page(page):
@@ -106,6 +121,7 @@ class Command(BaseCommand):
 
             if not page_content_list.exists():
                 _fix_page_references(page)
+                _fix_pagefield_references(page)
                 _delete_page(page)
                 stats['page_deleted'] = stats['page_deleted'] + 1
                 continue
