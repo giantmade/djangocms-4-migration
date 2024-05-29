@@ -51,14 +51,15 @@ def _fix_page_references(page):
 
 def _fix_pagefield_references(page):
     replacement_page = _get_replacement_page(page)
-    logger.info("Fixing PageField references from Page %s to %s", page.id, replacement_page.id)
+    logger.info(
+        "Fixing PageField references from Page %s to %s", page.id, replacement_page.id
+    )
     plugin_relation_models = [
-        r for r in page._meta._relation_tree if r.related_model == Page
+        r for r in page._meta._relation_tree if type(r) == PageField
     ]
-
     for rel in plugin_relation_models:
         model = rel.model
-        model.objects.filter(**{rel.name: page}).update(**{rel.name:replacement_page})
+        model.objects.filter(**{rel.name: page}).update(**{rel.name: replacement_page})
 
 
 def _delete_page(page):
