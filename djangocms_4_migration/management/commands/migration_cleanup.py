@@ -1,24 +1,19 @@
 import logging
 
-from django.core.management.base import BaseCommand
+from cms.models import Page, PageContent, PageUrl, Placeholder
+from cms.models.fields import PageField
 from django.contrib.contenttypes.models import ContentType
+from django.core.management.base import BaseCommand
 from django.db import connection
 from django.db.models import ProtectedError
-
-from cms.models import (
-    Placeholder,
-    Page,
-    PageContent,
-)
-
 from djangocms_versioning.models import Version
-
 
 logger = logging.getLogger(__name__)
 
 
 def _get_replacement_page(page):
     return Page.objects.filter(node_id=page.node_id).exclude(id=page.id).get()
+
 
 def _fix_page_references(page):
     relations = [
@@ -34,7 +29,12 @@ def _fix_page_references(page):
 
     for rel in relations:
         model = rel.related_model
-        if rel.one_to_one:
+        # ignore PageUrl model as that is directly tied to the original page and should be deleted
+        # alongside the page. We create the replacement in CMS migration 0030. We handle the
+        # deletion on L66
+        if model == PageUrl:
+            continue
+        elif rel.one_to_one:
             # One to one relationships should not be duplicated, so just delete object
             model.objects.filter(**{rel.field.name: page}).delete()
         elif rel.many_to_many:
